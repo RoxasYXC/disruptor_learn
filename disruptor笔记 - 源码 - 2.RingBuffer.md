@@ -1,0 +1,39 @@
+# disruptor笔记 - 源码 - RingBuffer
+- RingBuffer 角色相当于是生产者消费者模型中的队列，它是disruptor的核心组件，是一个环状的数组队列
+	- RingBuffer实现的接口有Cursored、EventSequencer和EventSink
+		- Cursored用于确定当前游标序列号。
+		- EventSequencer扩展了Sequenced，提供了一些序列功能；同时扩展了DataProvider，提供了按序列值来获取数据的功能。 
+		- EventSink主要是提供发布事件(就是往队列上放数据)的功能，publishEvent、tryPublishEvent各种方法重载。
+		
+	- RingBufferPad 缓存行前填充，填充了56个字节
+	- RingBufferFields
+		- entries 数组
+		- bufferSize 数组长度
+		- indexMask 下标掩码
+		- 一个Sequencer
+		- 整个RingBuffer内部做了大量的缓存行填充，前后各填充了56个字节，entries本身也根据引用大小进行了填充，假设引用大小为4字节，那么entries数组两侧就要个填充32个空数组位。也就是说，实际的数组长度比bufferSize要大。所以可以看到根据序列从entries中取元素的方法elementAt内部做了一些调整，不是单纯的取模。
+		- bufferSize必须是2的幂，indexMask就是bufferSize-1，这样取模更高效(sequence&indexMask)。
+		- 初始化时需要传入一个EventFactory，用来做队列内事件的预填充。
+	- RingBuffer对外屏蔽了构造方法，需要通过静态工厂类来进行初始化
+		- create
+		- createMultiProducer
+		- createSingleProducer
+	- public E get(long sequence)
+		- 获取执行序列对应的事件槽，生产者和消费者在申请到序列后都会调用这个方法来获取槽位，从而进一步的发布或消费事件。
+	- public long next(int n)
+		- 申请槽位，通过sequencer.next(n)来实现。
+	- public boolean isPublished(long sequence)	
+		- 槽位是否已经发布了事件，通过sequencer.isAvailable(sequence)实现
+	- public void addGatingSequences(Sequence... gatingSequences)
+	- public long getMinimumGatingSequence()
+	- public boolean removeGatingSequence(Sequence sequence)
+		- 上面三个都是基于sequencer实现的序列追踪方法
+	- public void publishEvent(EventTranslator<E> translator)
+		- 调用sequencer.next()申请序列
+		- 通过EventTranslator来进行事件的填充和转换
+		- 通过sequencer.publish(sequence)进行事件的提交
+- 总结
+	- RingBuffer是协调生产者和消费者的中间队列，生产者发布事件放到RingBuffer，消费者从RingBuffer上拿事件进行消费。
+	- RingBuffer可以认为是一个环形队列，底层由数组实现。内部做了大量的缓存行填充来避免伪共享，保存事件使用的数组的长度必须是2的幂，这样可以高效的取模(取模本身就包含绕回逻辑，按照序列不断的增长，形成一个环形轨迹)。由于RingBuffer这样的特性，也避免了GC带来的性能影响，因为RingBuffer本身永远不会被GC。
+	- RingBuffer和普通的FIFO队列相比还有一个重要的区别就是，RingBuffer避免了头尾节点的竞争，多个生产者/消费者之间不必竞争同一个节点，只需要安全申请序列值各自存取事件就好了。		
+		
