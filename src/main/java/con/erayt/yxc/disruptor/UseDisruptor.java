@@ -1,7 +1,6 @@
 package con.erayt.yxc.disruptor;
 
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
+import java.util.concurrent.ThreadFactory;
 
 import com.lmax.disruptor.dsl.Disruptor;
 
@@ -20,10 +19,15 @@ import con.erayt.yxc.disruptor.translator.MyEventTranslator;
  * @created 2018年4月22日 下午9:09:16     
  */       
 public class UseDisruptor {
+	@SuppressWarnings("unchecked")
 	public static void main(String[] args) {
-		Executor executor = Executors.newFixedThreadPool(4);  
-		@SuppressWarnings("deprecation")
-		Disruptor<TestEvent> disruptor = new Disruptor<TestEvent>(new MyEventFactory(), 4, executor);
+		Disruptor<TestEvent> disruptor = new Disruptor<TestEvent>(new MyEventFactory(), 4, new ThreadFactory() {
+			
+			@Override
+			public Thread newThread(Runnable r) {
+				return new Thread(r);
+			}
+		});
 		disruptor.handleEventsWith(new MyEventHandler()).then(new AnotherEventHandler());
 		disruptor.start();
 		for (int i = 0; i < 10; i++) {
